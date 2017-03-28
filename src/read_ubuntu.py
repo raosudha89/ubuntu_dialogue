@@ -1,8 +1,6 @@
 import sys
 import numpy as np
 import nltk
-#from gensim.models import word2vec
-#from gensim.models import Word2Vec
 import cPickle
 import csv
 import time
@@ -17,54 +15,52 @@ import cPickle as p
 COUNT_CUTOFF = 15
 pos_dict = {}
 tknzr = TweetTokenizer()
-FEATURE_COUNT = 1
-#MAX_VOCAB_SIZE = 14000
 
 FLAGS = re.MULTILINE | re.DOTALL
 
 def hashtag(text):
-    text = text.group()
-    hashtag_body = text[1:]
-    if hashtag_body.isupper():
-        result = "<hashtag> {} <allcaps>".format(hashtag_body)
-    else:
-        result = " ".join(["<hashtag>"] + re.split(r"(?=[A-Z])", hashtag_body, flags=FLAGS))
-    return result
+	text = text.group()
+	hashtag_body = text[1:]
+	if hashtag_body.isupper():
+		result = "<hashtag> {} <allcaps>".format(hashtag_body)
+	else:
+		result = " ".join(["<hashtag>"] + re.split(r"(?=[A-Z])", hashtag_body, flags=FLAGS))
+	return result
 
 def allcaps(text):
-    text = text.group()
-    return text.lower() + " <allcaps>"
+	text = text.group()
+	return text.lower() + " <allcaps>"
 
 def replace_emoticons(text):
-    # Different regex parts for smiley faces
-    eyes = r"[8:=;]"
-    nose = r"['`\-]?"
+	# Different regex parts for smiley faces
+	eyes = r"[8:=;]"
+	nose = r"['`\-]?"
 
-    # function so code less repetitive
-    def re_sub(pattern, repl):
-        try:
-            return re.sub(pattern, repl, text, flags=FLAGS)
-        except:
-            return text
+	# function so code less repetitive
+	def re_sub(pattern, repl):
+		try:
+			return re.sub(pattern, repl, text, flags=FLAGS)
+		except:
+			return text
 
-    text = re_sub(r"https?:\/\/\S+\b|www\.(\w+\.)+\S*", "<url>")
-    text = re_sub(r"/"," / ")
-    text = re_sub(r"@\w+", "<user>")
-    text = re_sub(r"{}{}[)dD]+|[)dD]+{}{}".format(eyes, nose, nose, eyes), "<smile>")
-    text = re_sub(r"{}{}p+".format(eyes, nose), "<lolface>")
-    text = re_sub(r"{}{}\(+|\)+{}{}".format(eyes, nose, nose, eyes), "<sadface>")
-    text = re_sub(r"{}{}[\/|l*]".format(eyes, nose), "<neutralface>")
-    text = re_sub(r"<3","<heart>")
-    text = re_sub(r"[-+]?[.\d]*[\d]+[:,.\d]*", "<number>")
-    text = re_sub(r"#\S+", hashtag)
-    text = re_sub(r"([!?.]){2,}", r"\1 <repeat>")
-    text = re_sub(r"\b(\S*?)(.)\2{2,}\b", r"\1\2 <elong>")
+	text = re_sub(r"https?:\/\/\S+\b|www\.(\w+\.)+\S*", "<url>")
+	text = re_sub(r"/"," / ")
+	text = re_sub(r"@\w+", "<user>")
+	text = re_sub(r"{}{}[)dD]+|[)dD]+{}{}".format(eyes, nose, nose, eyes), "<smile>")
+	text = re_sub(r"{}{}p+".format(eyes, nose), "<lolface>")
+	text = re_sub(r"{}{}\(+|\)+{}{}".format(eyes, nose, nose, eyes), "<sadface>")
+	text = re_sub(r"{}{}[\/|l*]".format(eyes, nose), "<neutralface>")
+	text = re_sub(r"<3","<heart>")
+	text = re_sub(r"[-+]?[.\d]*[\d]+[:,.\d]*", "<number>")
+	text = re_sub(r"#\S+", hashtag)
+	text = re_sub(r"([!?.]){2,}", r"\1 <repeat>")
+	text = re_sub(r"\b(\S*?)(.)\2{2,}\b", r"\1\2 <elong>")
 
-    ## -- I just don't understand why the Ruby script adds <allcaps> to everything so I limited the selection.
-    # text = re_sub(r"([^a-z0-9()<>'`\-]){2,}", allcaps)
-    text = re_sub(r"([A-Z]){2,}", allcaps)
+	## -- I just don't understand why the Ruby script adds <allcaps> to everything so I limited the selection.
+	# text = re_sub(r"([^a-z0-9()<>'`\-]){2,}", allcaps)
+	text = re_sub(r"([A-Z]){2,}", allcaps)
 
-    return text.lower()
+	return text.lower()
 
 def get_idx(content, content_pos, vocab_idx, UNK_idx, max_len, is_response=True):
 	content_idx = np.zeros((max_len), dtype=np.int32)
@@ -99,8 +95,16 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 	responses_list = []
 	contexts_pos = []
 	responses_pos_list = []
+	if is_train:
+		C = 1000
+	else:
+		C = 100
+	c = 0
 	for line in csv.reader(data_file):
 		line = [unicode(l, 'utf-8') for l in line]
+		c += 1
+		if c == C:
+			break
 		#for l in line:
 		#	print l
 		#pdb.set_trace()
@@ -115,7 +119,7 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 				vocab[w] += 1
 		contexts.append(context_tok)
 		contexts_pos.append(context_pos)
-		response_list = line[1:3]
+		response_list = line[1:]
 		response_tok_list = []
 		response_pos_list = []
 		for response in response_list:
@@ -168,8 +172,8 @@ if __name__ == "__main__":
 	vocab = collections.defaultdict(int)
 	t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
 	d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, vocab, max_context_len, max_response_len, is_train=False)
-	
-	end_time = time.time()           
+	pdb.set_trace()
+	end_time = time.time()		   
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 	print("Entire Vocab size %s" % len(vocab)) 
@@ -191,7 +195,7 @@ if __name__ == "__main__":
 		vocab_idx[w] = idx
 		idx += 1
 	print("Vocab size used %s" % vocab_size)
-	end_time = time.time()           
+	end_time = time.time()		   
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 
@@ -205,22 +209,21 @@ if __name__ == "__main__":
 							get_data_idx(d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos, \
 											max_context_len, max_response_len, vocab_idx, UNK_idx)
 
-	end_time = time.time()           
+	end_time = time.time()		   
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 
-	end_time = time.time()           
+	end_time = time.time()		   
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 	train = [train_contexts_idx, train_context_masks_idx,\
 			train_responses_list_idx, train_response_masks_list_idx]
 	dev = [dev_contexts_idx, dev_context_masks_idx, \
-         	dev_responses_list_idx, dev_response_masks_list_idx]
+		 	dev_responses_list_idx, dev_response_masks_list_idx]
 	cPickle.dump(train, open(sys.argv[5], 'wb'))
 	cPickle.dump(dev, open(sys.argv[6], 'wb'))
 	cPickle.dump(vocab, open(sys.argv[7], 'wb'))
 	cPickle.dump(vocab_size, open(sys.argv[8], 'wb'))
 	cPickle.dump(vocab_idx, open(sys.argv[9], 'wb'))
-	end_time = time.time()           
+	end_time = time.time()		   
 	print("--- %s seconds ---" % (end_time - start_time))
-
