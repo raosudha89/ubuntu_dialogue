@@ -95,19 +95,9 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 	responses_list = []
 	contexts_pos = []
 	responses_pos_list = []
-	if is_train:
-		C = 1000
-	else:
-		C = 100
-	c = 0
+	labels = []
 	for line in csv.reader(data_file):
 		line = [unicode(l, 'utf-8') for l in line]
-		c += 1
-		if c == C:
-			break
-		#for l in line:
-		#	print l
-		#pdb.set_trace()
 		context = line[0]
 		context_tok = word_tokenize(context)
 		if len(context_tok) > max_context_len:
@@ -119,7 +109,11 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 				vocab[w] += 1
 		contexts.append(context_tok)
 		contexts_pos.append(context_pos)
-		response_list = line[1:]
+		if is_train:
+			response_list = [line[1]]
+			labels.append(int(line[2]))
+		else:
+			response_list = line[1:]
 		response_tok_list = []
 		response_pos_list = []
 		for response in response_list:
@@ -136,7 +130,7 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 		responses_list.append(response_tok_list)
 		responses_pos_list.append(response_pos_list)
 	if is_train:
-		return contexts, responses_list, contexts_pos, responses_pos_list, vocab
+		return contexts, responses_list, contexts_pos, responses_pos_list, labels, vocab
 	else:
 		return contexts, responses_list, contexts_pos, responses_pos_list
 
@@ -170,9 +164,8 @@ if __name__ == "__main__":
 	all_sentences = []
 	vocab_size = 0
 	vocab = collections.defaultdict(int)
-	t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
+	t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, labels, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
 	d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, vocab, max_context_len, max_response_len, is_train=False)
-	pdb.set_trace()
 	end_time = time.time()		   
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
@@ -199,6 +192,7 @@ if __name__ == "__main__":
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 
+	labels = np.asarray(labels, dtype=np.int32)
 	train_contexts_idx, train_context_masks_idx, \
 		train_responses_list_idx, train_response_masks_list_idx = \
 							get_data_idx(t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, \
@@ -217,7 +211,7 @@ if __name__ == "__main__":
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 	train = [train_contexts_idx, train_context_masks_idx,\
-			train_responses_list_idx, train_response_masks_list_idx]
+			train_responses_list_idx, train_response_masks_list_idx, labels]
 	dev = [dev_contexts_idx, dev_context_masks_idx, \
 		 	dev_responses_list_idx, dev_response_masks_list_idx]
 	cPickle.dump(train, open(sys.argv[5], 'wb'))
@@ -225,5 +219,5 @@ if __name__ == "__main__":
 	cPickle.dump(vocab, open(sys.argv[7], 'wb'))
 	cPickle.dump(vocab_size, open(sys.argv[8], 'wb'))
 	cPickle.dump(vocab_idx, open(sys.argv[9], 'wb'))
-	end_time = time.time()		   
+	end_time = time.time() 
 	print("--- %s seconds ---" % (end_time - start_time))

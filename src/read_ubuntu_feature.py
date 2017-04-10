@@ -146,7 +146,8 @@ def get_feature_vector(content):
 	return fv
 
 def get_idx(content, content_pos, vocab_idx, UNK_idx, max_len, is_response=True):
-	content_idx = np.zeros((max_len), dtype=np.float32)
+	content_idx = np.zeros((max_len), dtype=np.int32)
+	content_mask_idx = np.concatenate((np.ones(len(content)), np.zeros(max_len-len(content))))
 	for i, w in enumerate(content):
 		try:
 			content_idx[i] = vocab_idx[w]
@@ -155,7 +156,7 @@ def get_idx(content, content_pos, vocab_idx, UNK_idx, max_len, is_response=True)
 				content_idx[i] = pos_dict[content_pos[i][1]]
 			except KeyError:
 				content_idx[i] = UNK_idx
-	return content_idx
+	return content_idx, content_mask_idx
 
 def preprocess(words):
 	#words = [w.lower()[:7] for w in words]
@@ -190,11 +191,9 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 	responses_list = []
 	contexts_pos = []
 	responses_pos_list = []
+	labels = []
 	for line in csv.reader(data_file):
 		line = [unicode(l, 'utf-8') for l in line]
-		#for l in line:
-		#	print l
-		#pdb.set_trace()
 		context = line[0]
 		context_tok = word_tokenize(context)
 		if len(context_tok) > max_context_len:
@@ -206,7 +205,11 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 				vocab[w] += 1
 		contexts.append(context_tok)
 		contexts_pos.append(context_pos)
-		response_list = line[1:3]
+		if is_train:
+			response_list = [line[1]]
+			labels.append(int(line[2]))
+		else:
+			response_list = line[1:]
 		response_tok_list = []
 		response_pos_list = []
 		for response in response_list:
@@ -223,27 +226,30 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
 		responses_list.append(response_tok_list)
 		responses_pos_list.append(response_pos_list)
 	if is_train:
-		return contexts, responses_list, contexts_pos, responses_pos_list, vocab
+		return contexts, responses_list, contexts_pos, responses_pos_list, labels, vocab
 	else:
 		return contexts, responses_list, contexts_pos, responses_pos_list
 
-def get_data_idx(contexts, responses_list, contexts_pos, responses_pos_list, max_context_len, max_response_len):
+def get_data_idx(contexts, responses_list, contexts_pos, responses_pos_list, max_context_len, max_response_len, vocab_idx, UNK_idx):
 	contexts_idx = np.zeros((len(contexts), max_context_len), dtype=np.int32)
+	context_masks_idx = np.zeros((len(contexts), max_context_len), dtype=np.float32)
 	contexts_feat_vec = np.zeros((len(contexts), MAX_UTT_LEN, FEATURE_COUNT), dtype=np.float32)
 	responses_count = len(responses_list[0])
 	responses_list_idx = np.zeros((len(responses_list), responses_count, max_response_len), dtype=np.int32)
+	response_masks_list_idx = np.zeros((len(responses_list), responses_count, max_response_len), dtype=np.float32) 
 	responses_list_feat_vec = np.zeros((len(responses_list), responses_count, MAX_UTT_LEN, FEATURE_COUNT), dtype=np.float32)
 	for i in range(len(contexts)):
-		context_idx = get_idx(contexts[i], contexts_pos[i], vocab_idx, UNK_idx,\
-							max_context_len, False)
+		context_idx, context_mask_idx = get_idx(contexts[i], contexts_pos[i], vocab_idx, UNK_idx,\
+												max_context_len, False)
 		contexts_feat_vec[i] = get_feature_vector(contexts[i])
 		contexts_idx[i] = context_idx
+		context_masks_idx[i] = context_mask_idx
 		for j in range(len(responses_list[i])):
-			responses_list_idx[i][j] = get_idx(responses_list[i][j], responses_pos_list[i][j], \
-												vocab_idx, UNK_idx, max_response_len, True)
+			responses_list_idx[i][j], response_masks_list_idx[i][j] = get_idx(responses_list[i][j], responses_pos_list[i][j], \
+																				vocab_idx, UNK_idx, max_response_len, True)
 			responses_list_feat_vec[i][j] = get_feature_vector(responses_list[i][j])
 
-	return contexts_idx, contexts_feat_vec, responses_list_idx, responses_list_feat_vec
+	return contexts_idx, context_masks_idx, contexts_feat_vec, responses_list_idx, response_masks_list_idx, responses_list_feat_vec
 
 if __name__ == "__main__":
 	if len(sys.argv) < 4:
@@ -258,9 +264,8 @@ if __name__ == "__main__":
 	all_sentences = []
 	vocab_size = 0
 	vocab = collections.defaultdict(int)
-	t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
+	t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, labels, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
 	d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, vocab, max_context_len, max_response_len, is_train=False)
-	
 	end_time = time.time()           
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
@@ -269,33 +274,34 @@ if __name__ == "__main__":
 	vocab = collections.OrderedDict(sorted(vocab.items(), key=lambda t: t[1], reverse=True))
 	vocab = {w:ct for w,ct in vocab.iteritems() if ct > COUNT_CUTOFF}
 	
-	vocab_size = len(vocab.keys()) + 2
-	UNK_idx = 1
-	idx = 2 # 0 is for _not_a_word_
-	vocab_idx = {}
-	for w, ct in vocab.iteritems():
-		vocab_idx[w] = idx
-		idx += 1
-	
+	vocab_dim = 100
+	vocab_size = len(vocab.keys())
 	tags = load('help/tagsets/upenn_tagset.pickle').keys()
 	for i in range(len(tags)):
 		pos_dict[tags[i]] = i + 1 + vocab_size
 	vocab_size += len(tags)
-	
+	vocab_size += 1 #for UNK token
+	UNK_idx = 1
+	idx = 2 # 0 is for UNK
+	vocab_idx = {}
+	for w, ct in vocab.iteritems():
+		vocab_idx[w] = idx
+		idx += 1
 	print("Vocab size used %s" % vocab_size)
 	end_time = time.time()           
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
 
-	train_contexts_idx, train_contexts_feat_vec, \
-		train_responses_list_idx, train_responses_list_feat_vec = \
+	labels = np.asarray(labels, dtype=np.int32)
+	train_contexts_idx, train_context_masks_idx, train_contexts_feat_vec, \
+		train_responses_list_idx, train_response_masks_list_idx, train_responses_list_feat_vec = \
 							get_data_idx(t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, \
-											max_context_len, max_response_len)
+											max_context_len, max_response_len, vocab_idx, UNK_idx)
 
-	dev_contexts_idx, dev_contexts_feat_vec, \
-			dev_responses_list_idx, dev_responses_list_feat_vec = \
+	dev_contexts_idx, dev_context_masks_idx, dev_contexts_feat_vec, \
+			dev_responses_list_idx, dev_response_masks_list_idx, dev_responses_list_feat_vec = \
 							get_data_idx(d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos, \
-											max_context_len, max_response_len)
+											max_context_len, max_response_len, vocab_idx, UNK_idx)
 
 	end_time = time.time()           
 	print("--- %s seconds ---" % (end_time - start_time))
@@ -304,15 +310,14 @@ if __name__ == "__main__":
 	end_time = time.time()           
 	print("--- %s seconds ---" % (end_time - start_time))
 	start_time = end_time
-	train = [train_contexts_idx, train_contexts_feat_vec, \
-			train_responses_list_idx, train_responses_list_feat_vec]
-	dev = [dev_contexts_idx, dev_contexts_feat_vec, \
-         	dev_responses_list_idx, dev_responses_list_feat_vec]
+	train = [train_contexts_idx, train_context_masks_idx, train_contexts_feat_vec, \
+			train_responses_list_idx, train_response_masks_list_idx, train_responses_list_feat_vec, labels]
+	dev = [dev_contexts_idx, dev_context_masks_idx, dev_contexts_feat_vec, \
+         	dev_responses_list_idx, dev_response_masks_list_idx, dev_responses_list_feat_vec]
 	cPickle.dump(train, open(sys.argv[5], 'wb'))
 	cPickle.dump(dev, open(sys.argv[6], 'wb'))
 	cPickle.dump(vocab, open(sys.argv[7], 'wb'))
 	cPickle.dump(vocab_size, open(sys.argv[8], 'wb'))
 	cPickle.dump(vocab_idx, open(sys.argv[9], 'wb'))
-	end_time = time.time()           
+	end_time = time.time() 
 	print("--- %s seconds ---" % (end_time - start_time))
-
