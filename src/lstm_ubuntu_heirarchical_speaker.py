@@ -10,9 +10,10 @@ EOU_IDX = -1
 EOT_IDX = -1
 MAX_UTT_LEN = 23
 FEATURE_COUNT = 1
-DEPTH = 1
+DEPTH = 5
+N = 10
 
-def iterate_minibatches(contexts, responses, labels, batch_size, shuffle=False):
+def iterate_minibatches_train(contexts, responses, labels, batch_size, shuffle=False):
     if shuffle:
         indices = np.arange(len(contexts))
         np.random.shuffle(indices)
@@ -22,6 +23,17 @@ def iterate_minibatches(contexts, responses, labels, batch_size, shuffle=False):
         else:
             excerpt = slice(start_idx, start_idx + batch_size)
         yield contexts[excerpt], responses[excerpt], labels[excerpt]
+        
+def iterate_minibatches(contexts, responses, batch_size, shuffle=False):
+    if shuffle:
+        indices = np.arange(len(contexts))
+        np.random.shuffle(indices)
+    for start_idx in range(0, len(contexts) - batch_size + 1, batch_size):
+        if shuffle:
+            excerpt = indices[start_idx:start_idx + batch_size]
+        else:
+            excerpt = slice(start_idx, start_idx + batch_size)
+        yield contexts[excerpt], responses[excerpt]
 
 def get_utt_masks(contents, is_response=False):
     contents_masks = np.zeros(contents.shape, dtype=np.float32)
@@ -35,7 +47,11 @@ def get_utt_masks(contents, is_response=False):
         #for response: speaker_id is always 0, so don't change contents_feat_vec
         if not is_response:
             #for context: speaker_id starts with 1 if odd #of turns, 0 if even
-            no_of_turns = np.bincount(content)[EOT_IDX]
+            try:
+                no_of_turns = np.bincount(content)[EOT_IDX]
+            except:
+                print 'content empty'
+                no_of_turns = 0
             speaker_id = 1
             if no_of_turns%2 == 0:
                 speaker_id = 0
@@ -45,10 +61,12 @@ def get_utt_masks(contents, is_response=False):
             if not is_response:
                 contents_feat_vec[i][j][0] = speaker_id
                 if idx == EOT_IDX:
-                    speaker_id = 1 - speaker_id #switch the speaker_id
-                
+                    speaker_id = 1 - speaker_id #switch the speaker_id    
             if idx == EOU_IDX:
-                contents_utt_splits[i][k][prev:j+1] = 1.0/(j+1-prev)
+                try:
+                    contents_utt_splits[i][k][prev:j+1] = 1.0/(j+1-prev)
+                except:
+                    pdb.set_trace()
                 prev = j+1
                 k += 1
             elif idx == 0: #content has ended
@@ -66,37 +84,18 @@ def get_utt_masks(contents, is_response=False):
             contents_utt_prods[i][:k] = 1.0/k
     return contents_masks, contents_utt_splits, contents_utt_masks, contents_utt_prods, contents_feat_vec
 
-def validate_old(val_fn, fold_name, epoch, fold, batch_size):
-    start = time.time()
-    num_batches = 0.
-    cost = 0.
-    acc = 0.
-    contexts, contexts_feat_vec, responses, responses_feat_vec = fold
-    #ignore features
-    labels = np.zeros((len(contexts), 2), dtype=np.int32)
-    for i in range(len(contexts)):
-        labels[i][0] = 1
-    for c, r, l in iterate_minibatches(contexts, responses, labels, \
-                                                batch_size, shuffle=True):
+def shuffle(r, l):
+    shuffled_r = np.zeros(r.shape, dtype=np.int32)
+    shuffled_l = np.zeros(l.shape, dtype=np.int32)
 
-        cm, cus, cum, cup, cfv = get_utt_masks(c)
-        r = r[:,0]
-        rm, rus, rum, rup, rfv = get_utt_masks(r, is_response=True)        
-        #pdb.set_trace()
-        r_2 = r[:,1]
-        rm_2, rus_2, rum_2, rup_2, rfv_2 = get_utt_masks(r_2, is_response=True)
-        
-        loss, probs = val_fn(c, cm, cus, cum, cup, cfv, r, rm, rus, rum, rup, rfv, l)
-        corr = 0
-        for i in range(len(probs)):
-            if np.argmax(probs[i]) == np.argmax(l[i]):
-                corr += 1
-        acc += corr*1.0/len(probs)    
-        cost += loss*1.0/len(probs)
-        num_batches += 1
-    lstring = '%s: epoch:%d, cost:%f, acc:%f, time:%d' % \
-                (fold_name, epoch, cost / num_batches, acc / num_batches, time.time()-start)
-    print lstring
+    for i in range(len(r)):
+        indexes = range(len(r[i]))
+        random.shuffle(indexes)
+        for j, index in enumerate(indexes):
+            shuffled_r[i][j] = r[i][index]
+            shuffled_l[i][j] = l[i][index]
+
+    return shuffled_r, shuffled_l
 
 def validate_train(val_fn, fold_name, epoch, fold, batch_size):
     start = time.time()
@@ -106,8 +105,7 @@ def validate_train(val_fn, fold_name, epoch, fold, batch_size):
     contexts, context_masks, responses, response_masks, labels = fold
     responses = responses[:,0,:]
     response_masks = response_masks[:,0,:]
-    for c, cm, r, rm, l in iterate_minibatches_train(contexts, context_masks, responses, response_masks, labels,\
-                                                batch_size, shuffle=True):
+    for c, r, l in iterate_minibatches_train(contexts, responses, labels, batch_size, shuffle=True):
         cm, cus, cum, cup, cfv = get_utt_masks(c)
         rm, rus, rum, rup, rfv = get_utt_masks(r, is_response=True)
         loss, probs = val_fn(c, cm, cus, cum, cup, cfv, r, rm, rus, rum, rup, rfv, l)
@@ -130,14 +128,15 @@ def validate(val_fn, fold_name, epoch, fold, batch_size):
     contexts, context_masks, responses_list, response_masks_list = fold
     responses_list = responses_list[:,:N,:]
     response_masks_list = response_masks_list[:,:N,:]
-    for c, cm, r, rm in iterate_minibatches(contexts, context_masks, responses_list, response_masks_list, \
-                                                batch_size, shuffle=True):
+    for c, r in iterate_minibatches(contexts, responses_list, batch_size, shuffle=True):
+        cm, cus, cum, cup, cfv = get_utt_masks(c)
         l = np.zeros((batch_size, N), dtype=np.int32)
         l[:,0] = 1
-        r, rm, l = shuffle(r, rm, l)
+        r, l = shuffle(r, l)
         probs = np.zeros((batch_size, N))
         for j in range(N):
-            out = val_fn(c, cm, r[:,j,:], rm[:,j,:], l[:,j])
+            rm, rus, rum, rup, rfv = get_utt_masks(r[:,j,:], is_response=True)
+            out = val_fn(c, cm, cus, cum, cup, cfv, r[:,j,:], rm, rus, rum, rup, rfv, l[:,j])
             loss = out[0]
             probs[:,j] = out[1][:,0]
             cost += loss*1.0/len(probs)
@@ -155,27 +154,27 @@ def get_lstm_output(layers, d_hidden):
     l_context_emb, l_context_mask, l_response_emb, l_response_mask = layers 
     # now feed sequences of spans into VAN
     
-    l_context_lstm = lasagne.layers.LSTMLayer(l_context_emb_feat, d_hidden, \
+    l_context_lstm = lasagne.layers.LSTMLayer(l_context_emb, d_hidden, \
                                                 mask_input=l_context_mask, \
                                                 #only_return_final=True, \
                                                 peepholes=False,\
                                                 )
     
-    l_response_lstm = lasagne.layers.LSTMLayer(l_response_emb_feat, d_hidden, \
+    l_response_lstm = lasagne.layers.LSTMLayer(l_response_emb, d_hidden, \
                                                 mask_input=l_response_mask, \
                                                 #only_return_final=True, \
                                                 peepholes=False,\
                                                 )
 
     context_out = lasagne.layers.get_output(l_context_lstm)
-    responses_out = lasagne.layers.get_output(l_response_lstm)
+    response_out = lasagne.layers.get_output(l_response_lstm)
     
     context_params = lasagne.layers.get_all_params(l_context_lstm, trainable=True)
     response_params = lasagne.layers.get_all_params(l_response_lstm, trainable=True)
 
     return context_out, response_out, context_params+response_params
 
-def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, freeze=False):
+def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, freeze=False):
 
     # input theano vars
     contexts = T.imatrix(name='context')
@@ -192,7 +191,7 @@ def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, freeze=False)
     response_utt_prods = T.matrix(name='response_utt_prod')
     responses_feat_vec = T.ftensor3(name='response_feat')
 
-    labels = T.imatrix(name='label')   
+    labels = T.ivector(name='label')   
  
     # define network
     l_context = lasagne.layers.InputLayer(shape=(batch_size, max_len), input_var=contexts)
@@ -244,12 +243,13 @@ def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, freeze=False)
                                                              nonlinearity=lasagne.nonlinearities.sigmoid)
     
     dense_params = lasagne.layers.get_all_params(l_context_response_dense, trainable=True)
-    
     probs = lasagne.layers.get_output(l_context_response_dense)        
-    
     loss = T.sum(lasagne.objectives.binary_crossentropy(probs, labels))
+    
+    all_params = lstm_params + utt_lstm_params + dense_params
+    loss += rho * sum(T.sum(l ** 2) for l in all_params)
 
-    updates = lasagne.updates.adam(loss, lstm_params + utt_lstm_params + dense_params, learning_rate=lr)
+    updates = lasagne.updates.adam(loss, all_params, learning_rate=lr)
     train_fn = theano.function([contexts, context_masks, context_utt_splits, context_utt_masks, context_utt_prods, contexts_feat_vec, \
                                 responses, response_masks, response_utt_splits, response_utt_masks, response_utt_prods, responses_feat_vec, labels], \
                                [loss, probs], updates=updates)
@@ -261,7 +261,10 @@ def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, freeze=False)
 def set_max_utt_len(contexts):
     global MAX_UTT_LEN
     for context in contexts:
-        ct = np.bincount(context)[EOU_IDX] 
+        try:
+            ct = np.bincount(context)[EOU_IDX]
+        except:
+            ct = 0
         MAX_UTT_LEN = max(ct, MAX_UTT_LEN)
     MAX_UTT_LEN += 1
 
@@ -275,17 +278,18 @@ if __name__ == '__main__':
     vocab_size = cPickle.load(open(sys.argv[3], 'rb'))
     vocab_idx = cPickle.load(open(sys.argv[4], 'rb'))
     batch_size = int(sys.argv[5])
-    d_word = 100
-    d_hidden = 100
+    d_word = 200
+    d_hidden = 200
     freeze = False
     lr = 0.001
-    n_epochs = 20
+    n_epochs = 10
     rho = 1e-5
     max_len = train[0].shape[1]
 
     vocab_size += 1
     EOU_IDX = vocab_idx['__eou__']        
-    EOT_IDX = vocab_idx['__eot__']        
+    EOT_IDX = vocab_idx['__eot__']
+    set_max_utt_len(train[0])
     print 'max_utt_len', MAX_UTT_LEN    
 
     print 'vocab_size', vocab_size, 'max_len', max_len
@@ -293,12 +297,13 @@ if __name__ == '__main__':
     print 'compiling graph...'
     start_time = time.time()
     train_fn, val_fn = build_lstm(vocab_size, d_word, d_hidden, max_len, batch_size, lr, rho, freeze=freeze)
+    #train_fn, val_fn = None, None
     print 'done compiling'
     end_time = time.time()           
     print("--- %s seconds ---" % (end_time - start_time))
 
     # train network
     for epoch in range(n_epochs):
-        validate(train_fn, 'Train', epoch, train, batch_size)
+        validate_train(train_fn, 'Train', epoch, train, batch_size)
         validate(val_fn, '\t DEV', epoch, dev, batch_size)
         print "\n"

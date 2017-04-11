@@ -11,10 +11,13 @@ import re
 import itertools
 import pdb
 import cPickle as p
+from math import log
 
 COUNT_CUTOFF = 15
+CONTEXT_COUNT_CUTOFF = 2
 pos_dict = {}
 tknzr = TweetTokenizer()
+MAX_UTT_LEN = 23
 
 FLAGS = re.MULTILINE | re.DOTALL
 
@@ -62,7 +65,7 @@ def replace_emoticons(text):
 
     return text.lower()
 
-def get_idx(content, content_pos, vocab_idx, UNK_idx, max_len, is_response=True):
+def get_idx(content, content_pos, vocab_idx, max_len, UNK_idx):
     content_idx = np.zeros((max_len), dtype=np.int32)
     content_mask_idx = np.concatenate((np.ones(len(content)), np.zeros(max_len-len(content))))
     for i, w in enumerate(content):
@@ -90,7 +93,20 @@ def word_tokenize(sent):
     sent = replace_emoticons(sent)
     return tknzr.tokenize(sent)
 
-def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True):
+def mysplit(mylist, tok):
+    ret_lists = []
+    l = []
+    for v in mylist:
+        l.append(v)
+        if v == tok:
+            if l:
+                ret_lists.append(l)
+            l = []
+    if l:
+        ret_lists.append(l)
+    return ret_lists
+
+def read_data(data_file, max_context_len, max_response_len, vocab=None, context_vocab=None, is_train=False):
     contexts = []
     responses_list = []
     contexts_pos = []
@@ -105,8 +121,18 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
         context_tok = preprocess(context_tok)
         context_pos = nltk.pos_tag(context_tok)
         if is_train:
+            context_word_freq = {}
             for w in context_tok:
                 vocab[w] += 1
+                try:
+                    context_word_freq[w] += 1
+                except KeyError:
+                    context_word_freq[w] = 1
+            for w, ct in context_word_freq.iteritems():
+                try:
+                    context_vocab[w] = max(context_vocab[w], ct)
+                except KeyError:
+                    context_vocab[w] = ct
         contexts.append(context_tok)
         contexts_pos.append(context_pos)
         if is_train:
@@ -130,7 +156,7 @@ def read_data(data_file, vocab, max_context_len, max_response_len, is_train=True
         responses_list.append(response_tok_list)
         responses_pos_list.append(response_pos_list)
     if is_train:
-        return contexts, responses_list, contexts_pos, responses_pos_list, labels, vocab
+        return contexts, responses_list, contexts_pos, responses_pos_list, labels, vocab, context_vocab
     else:
         return contexts, responses_list, contexts_pos, responses_pos_list
 
@@ -141,19 +167,19 @@ def get_data_idx(contexts, responses_list, contexts_pos, responses_pos_list, max
     responses_list_idx = np.zeros((len(responses_list), responses_count, max_response_len), dtype=np.int32)
     response_masks_list_idx = np.zeros((len(responses_list), responses_count, max_response_len), dtype=np.float32) 
     for i in range(len(contexts)):
-        context_idx, context_mask_idx = get_idx(contexts[i], contexts_pos[i], vocab_idx, UNK_idx,\
-                                                max_context_len, False)
+        context_idx, context_mask_idx = get_idx(contexts[i], contexts_pos[i], \
+                                                vocab_idx, max_context_len, UNK_idx)
         contexts_idx[i] = context_idx
         context_masks_idx[i] = context_mask_idx
         for j in range(len(responses_list[i])):
-            responses_list_idx[i][j], response_masks_list_idx[i][j] = get_idx(responses_list[i][j], responses_pos_list[i][j], \
-                                                                                vocab_idx, UNK_idx, max_response_len, True)
+            responses_list_idx[i][j], response_masks_list_idx[i][j]  = get_idx(responses_list[i][j], responses_pos_list[i][j], \
+                                                                                vocab_idx, max_response_len, UNK_idx)
 
     return contexts_idx, context_masks_idx, responses_list_idx, response_masks_list_idx
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print "usage: read_ubuntu.py <train.csv> <dev.csv> <glove_twitter_we> <out_train.p> <out_dev.p> <out.vocab> <out.vocab_size> <out.vocab_idx>"
+        print "usage: read_ubuntu.py <train.csv> <dev.csv> <out_train.p> <out_dev.p> <out.vocab> <out.vocab_size> <out.vocab_idx>"
         sys.exit(0)
     start_time = time.time()
     train_file = open(sys.argv[1])
@@ -164,16 +190,25 @@ if __name__ == "__main__":
     all_sentences = []
     vocab_size = 0
     vocab = collections.defaultdict(int)
-    t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, labels, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
-    d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, vocab, max_context_len, max_response_len, is_train=False)
+    context_vocab = collections.defaultdict(int)
+    t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, labels, vocab, context_vocab = read_data(train_file, max_context_len, max_response_len, vocab, context_vocab, is_train=True)
+    d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, max_context_len, max_response_len)
+    
     end_time = time.time()           
     print("--- %s seconds ---" % (end_time - start_time))
     start_time = end_time
-    print("Entire Vocab size %s" % len(vocab)) 
-    #vocab = collections.OrderedDict(sorted(vocab.items(), key=lambda t: t[1], reverse=True)[:MAX_VOCAB_SIZE])
+    print("Entire vocab size %s" % len(vocab)) 
     vocab = collections.OrderedDict(sorted(vocab.items(), key=lambda t: t[1], reverse=True))
     vocab = {w:ct for w,ct in vocab.iteritems() if ct > COUNT_CUTOFF}
-    
+    print("Cutoff vocab size %s" % len(vocab)) 
+
+    print("Entire context vocab size %s" % len(context_vocab))
+    context_vocab = collections.OrderedDict(sorted(context_vocab.items(), key=lambda t: t[1], reverse=True))
+    context_vocab = {w:ct for w,ct in context_vocab.iteritems() if ct > CONTEXT_COUNT_CUTOFF}
+    print("Cutoff context vocab size %s" % len(context_vocab)) 
+
+    vocab = context_vocab
+
     vocab_dim = 100
     vocab_size = len(vocab.keys())
     tags = load('help/tagsets/upenn_tagset.pickle').keys()

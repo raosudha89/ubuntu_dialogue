@@ -97,7 +97,7 @@ def validate(val_fn, fold_name, epoch, fold, batch_size):
 				(fold_name, epoch, cost / num_batches, acc / num_batches, time.time()-start)
 	print lstring
 
-def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, freeze=False):
+def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, forget_gate_bias, freeze=False):
 
 	# input theano vars
 	contexts = T.imatrix(name='context')
@@ -112,19 +112,23 @@ def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, freeze=F
 	l_context_emb = lasagne.layers.EmbeddingLayer(l_context, len_voc, d_word, W=lasagne.init.GlorotNormal())
 	
 	l_context_lstm = lasagne.layers.LSTMLayer(l_context_emb, d_hidden, \
-									mask_input=l_context_mask, \
-									#only_return_final=True, \
-									peepholes=False,\
-									)
+											grad_clipping=10, \
+											forgetgate=lasagne.layers.Gate(b=lasagne.init.Constant(forget_gate_bias)), \
+											mask_input=l_context_mask, \
+											learn_init=True, \
+											peepholes=True,\
+											)
 	l_response = lasagne.layers.InputLayer(shape=(batch_size, max_len), input_var=responses)
 	l_response_mask = lasagne.layers.InputLayer(shape=(batch_size, max_len), input_var=response_masks)
 	l_response_emb = lasagne.layers.EmbeddingLayer(l_response, len_voc, d_word, W=lasagne.init.GlorotNormal())
 	
 	l_response_lstm = lasagne.layers.LSTMLayer(l_response_emb, d_hidden, \
-									mask_input=l_response_mask, \
-									#only_return_final=True, \
-									peepholes=False,\
-									)	
+											grad_clipping=10, \
+											forgetgate=lasagne.layers.Gate(b=lasagne.init.Constant(forget_gate_bias)), \
+											mask_input=l_response_mask, \
+											learn_init=True, \
+											peepholes=True,\
+											)	
 
 	# now get aggregate embeddings
 	context_out = lasagne.layers.get_output(l_context_lstm)
@@ -184,19 +188,20 @@ if __name__ == '__main__':
 	dev = cPickle.load(open(sys.argv[2], 'rb'))
 	vocab_size = cPickle.load(open(sys.argv[3], 'rb'))
 	batch_size = int(sys.argv[4])
-	d_word = 100
-	d_hidden = 200
+	d_word = 300
+	d_hidden = 300
 	freeze = False
 	lr = 0.001
 	n_epochs = 10
 	rho = 1e-5
+	forget_gate_bias = 2.0
 	max_len = len(train[0][1])
 	
 	print 'vocab_size', vocab_size, 'max_len', max_len
 
 	start_time = time.time()
 	print 'compiling graph...'
-	train_fn, val_fn = build_lstm(vocab_size, d_word, d_hidden, max_len, batch_size, lr, rho, freeze=freeze)
+	train_fn, val_fn = build_lstm(vocab_size, d_word, d_hidden, max_len, batch_size, lr, rho, forget_gate_bias, freeze=freeze)
 	print 'done compiling'
 	print 'time taken ', time.time() - start_time
 
