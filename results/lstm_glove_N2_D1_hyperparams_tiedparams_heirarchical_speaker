@@ -1,0 +1,42 @@
+THEANO_FLAGS=device=gpu0,floatX=float32 python src/lstm_ubuntu_heirarchical_speaker.py /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/valid.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.vocab_idx /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.vocab_size 500 /fs/clip-scratch/raosudha/glove.840B.300d.we.p /fs/clip-scratch/raosudha/glove.840B.300d.vocab.p
+WARNING (theano.sandbox.cuda): The cuda backend is deprecated and will be removed in the next release.  Please switch to the gpuarray backend. You can get more information about how to switch at this URL:
+ https://github.com/Theano/Theano/wiki/Converting-to-the-new-gpu-back-end%28gpuarray%29
+
+Using gpu device 0: TITAN X (Pascal) (CNMeM is disabled, cuDNN 5105)
+src/lstm_ubuntu_heirarchical_speaker.py:330: FutureWarning: comparison to `None` will result in an elementwise object comparison in the future.
+  if we == None: #POS tags and UNK
+max_utt_len 27
+vocab_size 27535 max_len 100
+compiling graph...
+done compiling
+--- 202.196913958 seconds ---
+content empty
+Train: epoch:0, cost:0.580109, acc:0.691564, time:2385
+	 DEV: epoch:0, cost:0.988864, acc:0.850154, time:34
+[0.85, 1.0]
+
+
+content empty
+Train: epoch:1, cost:0.458059, acc:0.786588, time:2386
+	 DEV: epoch:1, cost:0.890932, acc:0.879744, time:34
+[0.88, 1.0]
+
+
+content empty
+Train: epoch:2, cost:0.401841, acc:0.820368, time:2325
+	 DEV: epoch:2, cost:0.882431, acc:0.884974, time:35
+[0.885, 1.0]
+
+
+content empty
+Train: epoch:3, cost:0.358472, acc:0.844224, time:2481
+	 DEV: epoch:3, cost:0.907254, acc:0.887077, time:35
+[0.887, 1.0]
+
+
+content empty
+Train: epoch:4, cost:0.318719, acc:0.864249, time:2551
+	 DEV: epoch:4, cost:0.943938, acc:0.882667, time:34
+[0.883, 1.0]
+
+

@@ -1,0 +1,49 @@
+THEANO_FLAGS=device=gpu0,floatX=float32 python src/lstm_ubuntu.py /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/valid.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/test.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.vocab_idx /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.vocab_size 500 /fs/clip-scratch/raosudha/glove.840B.300d.we.p /fs/clip-scratch/raosudha/glove.840B.300d.vocab.p
+WARNING (theano.sandbox.cuda): The cuda backend is deprecated and will be removed in the next release.  Please switch to the gpuarray backend. You can get more information about how to switch at this URL:
+ https://github.com/Theano/Theano/wiki/Converting-to-the-new-gpu-back-end%28gpuarray%29
+
+Using gpu device 0: TITAN X (Pascal) (CNMeM is disabled, cuDNN 5105)
+src/lstm_ubuntu.py:263: FutureWarning: comparison to `None` will result in an elementwise object comparison in the future.
+  if we == None: #POS tags and UNK
+loading data...
+vocab_size 27535 max_len 100
+done loading
+time taken  1127.35855913
+compiling graph...
+done compiling
+time taken  72.0615808964
+Train: epoch:0, cost:0.635995, acc:0.649075, time:968
+	 Dev: epoch:0, cost:5.584658, acc:0.417590, time:155
+[0.418, 0.595, 0.711, 0.798, 0.862, 0.911, 0.949, 0.974, 0.99, 1.0]
+	 Test: epoch:0, cost:5.584514, acc:0.413135, time:111
+[0.413, 0.595, 0.713, 0.8, 0.864, 0.916, 0.949, 0.975, 0.991, 1.0]
+
+
+Train: epoch:1, cost:0.535940, acc:0.739210, time:1119
+	 Dev: epoch:1, cost:5.488478, acc:0.481897, time:139
+[0.482, 0.66, 0.769, 0.845, 0.896, 0.936, 0.963, 0.982, 0.993, 1.0]
+	 Test: epoch:1, cost:5.513857, acc:0.475946, time:148
+[0.476, 0.658, 0.769, 0.846, 0.899, 0.94, 0.967, 0.984, 0.995, 1.0]
+
+
+Train: epoch:2, cost:0.480385, acc:0.773810, time:1108
+	 Dev: epoch:2, cost:5.157686, acc:0.504718, time:147
+[0.505, 0.68, 0.782, 0.853, 0.904, 0.941, 0.967, 0.984, 0.995, 1.0]
+	 Test: epoch:2, cost:5.161933, acc:0.496432, time:140
+[0.496, 0.676, 0.785, 0.855, 0.907, 0.943, 0.967, 0.985, 0.995, 1.0]
+
+
+Train: epoch:3, cost:0.435739, acc:0.798231, time:1111
+	 Dev: epoch:3, cost:5.039695, acc:0.512564, time:146
+[0.513, 0.687, 0.789, 0.858, 0.907, 0.943, 0.966, 0.982, 0.994, 1.0]
+	 Test: epoch:3, cost:5.074571, acc:0.506162, time:129
+[0.506, 0.682, 0.787, 0.86, 0.909, 0.946, 0.97, 0.986, 0.995, 1.0]
+
+
+Train: epoch:4, cost:0.396052, acc:0.818961, time:589
+	 Dev: epoch:4, cost:5.727025, acc:0.504205, time:32
+[0.504, 0.683, 0.785, 0.856, 0.906, 0.941, 0.966, 0.983, 0.994, 1.0]
+	 Test: epoch:4, cost:5.784400, acc:0.498595, time:31
+[0.499, 0.676, 0.781, 0.856, 0.909, 0.942, 0.968, 0.985, 0.995, 1.0]
+
+

@@ -1,0 +1,42 @@
+THEANO_FLAGS=device=gpu1,floatX=float32 python src/lstm_ubuntu_heirarchical_speaker.py /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.bursty.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/valid.100_100.bursty.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.bursty.vocab_idx /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.bursty.vocab_size 500 /fs/clip-scratch/raosudha/glove.840B.300d.we.p /fs/clip-scratch/raosudha/glove.840B.300d.vocab.p
+WARNING (theano.sandbox.cuda): The cuda backend is deprecated and will be removed in the next release.  Please switch to the gpuarray backend. You can get more information about how to switch at this URL:
+ https://github.com/Theano/Theano/wiki/Converting-to-the-new-gpu-back-end%28gpuarray%29
+
+Using gpu device 1: TITAN X (Pascal) (CNMeM is disabled, cuDNN 5105)
+src/lstm_ubuntu_heirarchical_speaker.py:327: FutureWarning: comparison to `None` will result in an elementwise object comparison in the future.
+  if we == None: #POS tags and UNK
+max_utt_len 27
+vocab_size 17423 max_len 100
+compiling graph...
+done compiling
+--- 137.279445171 seconds ---
+content empty
+Train: epoch:0, cost:0.550126, acc:0.710200, time:2239
+	 DEV: epoch:0, cost:4.683941, acc:0.543333, time:234
+[0.543, 0.722, 0.819, 0.888, 0.932, 0.961, 0.979, 0.991, 0.997, 1.0]
+
+
+content empty
+Train: epoch:1, cost:0.422844, acc:0.804181, time:2529
+	 DEV: epoch:1, cost:4.124777, acc:0.607385, time:276
+[0.607, 0.771, 0.863, 0.916, 0.95, 0.972, 0.985, 0.994, 0.998, 1.0]
+
+
+content empty
+Train: epoch:2, cost:0.363550, acc:0.837607, time:1600
+	 DEV: epoch:2, cost:3.860808, acc:0.629385, time:95
+[0.629, 0.793, 0.875, 0.923, 0.956, 0.975, 0.987, 0.994, 0.998, 1.0]
+
+
+content empty
+Train: epoch:3, cost:0.313830, acc:0.863828, time:1486
+	 DEV: epoch:3, cost:4.181208, acc:0.624667, time:94
+[0.625, 0.793, 0.876, 0.924, 0.957, 0.975, 0.987, 0.995, 0.998, 1.0]
+
+
+content empty
+Train: epoch:4, cost:0.261370, acc:0.889619, time:1483
+	 DEV: epoch:4, cost:4.622778, acc:0.619590, time:97
+[0.62, 0.786, 0.871, 0.921, 0.953, 0.973, 0.985, 0.993, 0.998, 1.0]
+
+

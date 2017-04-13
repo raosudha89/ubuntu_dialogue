@@ -1,0 +1,51 @@
+THEANO_FLAGS=device=gpu0,floatX=float32 python src/lstm_ubuntu.py /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/valid.100_100.p /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.vocab_idx /fs/clip-amr/ubuntu_dialogue/ubuntu-ranking-dataset-creator/src/train.100_100.vocab_size 500 /fs/clip-scratch/raosudha/glove.840B.300d.we.p /fs/clip-scratch/raosudha/glove.840B.300d.vocab.p
+WARNING (theano.sandbox.cuda): The cuda backend is deprecated and will be removed in the next release.  Please switch to the gpuarray backend. You can get more information about how to switch at this URL:
+ https://github.com/Theano/Theano/wiki/Converting-to-the-new-gpu-back-end%28gpuarray%29
+
+Using gpu device 0: TITAN X (Pascal) (CNMeM is disabled, cuDNN 5105)
+src/lstm_ubuntu.py:236: FutureWarning: comparison to `None` will result in an elementwise object comparison in the future.
+  if we == None: #POS tags and UNK
+vocab_size 27535 max_len 100
+compiling graph...
+done compiling
+time taken  83.3772728443
+Train: epoch:0, cost:0.633159, acc:0.653697, time:572
+	 Dev: epoch:0, cost:1.131709, acc:0.797590, time:6
+
+
+Train: epoch:1, cost:0.533007, acc:0.741312, time:573
+	 Dev: epoch:1, cost:1.041610, acc:0.834410, time:6
+
+
+Train: epoch:2, cost:0.475217, acc:0.777373, time:574
+	 Dev: epoch:2, cost:1.017124, acc:0.848308, time:6
+
+
+Train: epoch:3, cost:0.427879, acc:0.803128, time:573
+	 Dev: epoch:3, cost:1.031007, acc:0.847282, time:6
+
+
+Train: epoch:4, cost:0.384591, acc:0.825841, time:573
+	 Dev: epoch:4, cost:1.085932, acc:0.845897, time:6
+
+
+Train: epoch:5, cost:0.345520, acc:0.846151, time:573
+	 Dev: epoch:5, cost:1.138026, acc:0.841897, time:6
+
+
+Train: epoch:6, cost:0.311656, acc:0.863517, time:573
+	 Dev: epoch:6, cost:1.251790, acc:0.840103, time:6
+
+
+Train: epoch:7, cost:0.282717, acc:0.878379, time:573
+	 Dev: epoch:7, cost:1.324780, acc:0.832923, time:6
+
+
+Train: epoch:8, cost:0.258320, acc:0.891153, time:573
+	 Dev: epoch:8, cost:1.464832, acc:0.833949, time:6
+
+
+Train: epoch:9, cost:0.238280, acc:0.901294, time:574
+	 Dev: epoch:9, cost:1.567092, acc:0.831385, time:6
+
+
