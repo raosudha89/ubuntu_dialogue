@@ -175,19 +175,21 @@ def get_trigram_histogram(vocab, trigram_vocab_idx, TRIGRAM_UNK_idx):
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print "usage: read_ubuntu_trigram.py <train.csv> <dev.csv> <max_context_len> <max_response_len> <out_train.p> <out_dev.p> <out.vocab> <out.vocab_size> <out.vocab_idx>"
+        print "usage: read_ubuntu_trigram.py <train.csv> <dev.csv> <test.csv> <max_context_len> <max_response_len> <out_train.p> <out_dev.p> <out.vocab> <out.vocab_size> <out.vocab_idx>"
         sys.exit(0)
     start_time = time.time()
     train_file = open(sys.argv[1])
     dev_file = open(sys.argv[2])
-    max_context_len = int(sys.argv[3])
-    max_response_len = int(sys.argv[4])
+    test_file = open(sys.argv[3])
+    max_context_len = int(sys.argv[4])
+    max_response_len = int(sys.argv[5])
     line = train_file.readline()
     all_sentences = []
     vocab_size = 0
     vocab = collections.defaultdict(int)
     t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, labels, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
     d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, vocab, max_context_len, max_response_len, is_train=False)
+    tt_contexts, tt_responses_list, tt_contexts_pos, tt_responses_list_pos = read_data(test_file, vocab, max_context_len, max_response_len, is_train=False)
     end_time = time.time()           
     print("--- %s seconds ---" % (end_time - start_time))
     start_time = end_time

@@ -5,13 +5,15 @@ import theano.tensor as T
 from collections import OrderedDict, Counter
 import math, random
 import pdb
+from sklearn.decomposition import PCA
 
 EOU_IDX = -1
 EOT_IDX = -1
 MAX_UTT_LEN = 23
 FEATURE_COUNT = 1
 DEPTH = 1
-N = 10
+N = 2
+TRIGRAM_COUNT_CUTOFF = 30
 
 def iterate_minibatches_train(contexts, responses, labels, batch_size, shuffle=False):
     if shuffle:
@@ -117,11 +119,20 @@ def validate_train(val_fn, fold_name, epoch, fold, batch_size):
                 (fold_name, epoch, cost / num_batches, acc / num_batches, time.time()-start)
     print lstring
 
+def get_rank(preds, labels):
+    preds = np.array(preds)
+    correct = np.where(labels==1)[0][0]
+    sort_index_preds = np.argsort(preds)
+    desc_sort_index_preds = sort_index_preds[::-1] #since ascending sort and we want descending
+    rank = np.where(desc_sort_index_preds==correct)[0][0]
+    return rank+1
+
 def validate(val_fn, fold_name, epoch, fold, batch_size):
     start = time.time()
     num_batches = 0.
     cost = 0.
     acc = 0.
+    recall = [0]*N
     contexts, context_masks, responses_list, response_masks_list = fold
     responses_list = responses_list[:,:N,:]
     response_masks_list = response_masks_list[:,:N,:]
@@ -135,17 +146,26 @@ def validate(val_fn, fold_name, epoch, fold, batch_size):
             rm, rus, rum, rup, rfv = get_utt_masks(r[:,j,:], is_response=True)
             out = val_fn(c, cm, cus, cum, cup, cfv, r[:,j,:], rm, rus, rum, rup, rfv, l[:,j])
             loss = out[0]
-            probs[:,j] = out[1][:,0]
+            # probs[:,j] = out[1][:,0]
+            probs[:,j] = out[1]
             cost += loss*1.0/len(probs)
         corr = 0
         for i in range(batch_size):
-            if np.argmax(probs[i]) == np.argmax(l[i]):
+            rank = get_rank(probs[i], l[i])
+            if rank == 1:
                 corr += 1
+            # if np.argmax(probs[i]) == np.argmax(l[i]):
+            #     corr += 1
+            for index in range(N):
+                if rank <= index+1:
+                    recall[index] += 1
         acc += corr*1.0/batch_size
         num_batches += 1
+    recall = [round(curr_r*1.0/(batch_size*num_batches), 3) for curr_r in recall]
     lstring = '%s: epoch:%d, cost:%f, acc:%f, time:%d' % \
                 (fold_name, epoch, cost / num_batches, acc / num_batches, time.time()-start)
     print lstring
+    print recall
 
 def get_lstm_output(layers, d_hidden, forget_gate_bias):
     l_context_emb, l_context_mask, l_response_emb, l_response_mask = layers 
@@ -181,6 +201,9 @@ def get_lstm_output(layers, d_hidden, forget_gate_bias):
                                                                 b=l_context_lstm.b_cell,\
                                                                 nonlinearity=l_context_lstm.nonlinearity_cell),\
                                             )
+    # add dropout
+    l_context_lstm = lasagne.layers.DropoutLayer(l_context_lstm, p=0.4)
+    l_response_lstm = lasagne.layers.DropoutLayer(l_response_lstm, p=0.4)
 
     context_out = lasagne.layers.get_output(l_context_lstm)
     response_out = lasagne.layers.get_output(l_response_lstm)
@@ -238,27 +261,10 @@ def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, forget_g
     l_response_utt_mask = lasagne.layers.InputLayer(shape=(batch_size, MAX_UTT_LEN), input_var=response_utt_masks)
 
     layers = [l_context_utt_emb, l_context_utt_mask, l_response_utt_emb, l_response_utt_mask]
-    context_utt_out, response_utt_out, utt_lstm_params = get_lstm_output(layers, d_hidden)
+    context_utt_out, response_utt_out, utt_lstm_params = get_lstm_output(layers, d_hidden, forget_gate_bias)
 
     context_utt_out = T.sum(context_utt_out * context_utt_prods[:,:,None], axis=1)
     response_utt_out = T.sum(response_utt_out * response_utt_prods[:,:,None], axis=1)
-
-    # context_response = T.concatenate([context_utt_out, response_utt_out], axis=1)
-    # l_context_response_in = lasagne.layers.InputLayer(shape=(batch_size, 2*d_hidden), input_var=context_response)
-    # 
-    # for k in range(DEPTH):
-    #     if k == 0:
-    #         l_context_response_dense = lasagne.layers.DenseLayer(l_context_response_in, num_units=d_hidden, \
-    #                                                          nonlinearity=lasagne.nonlinearities.rectify)
-    #     else:
-    #         l_context_response_dense = lasagne.layers.DenseLayer(l_context_response_dense, num_units=d_hidden, \
-    #                                                          nonlinearity=lasagne.nonlinearities.rectify)
-    # 
-    # l_context_response_dense = lasagne.layers.DenseLayer(l_context_response_dense, num_units=1, \
-    #                                                          nonlinearity=lasagne.nonlinearities.sigmoid)
-    # 
-    # dense_params = lasagne.layers.get_all_params(l_context_response_dense, trainable=True)
-    # probs = lasagne.layers.get_output(l_context_response_dense)
 
     M = theano.shared(np.eye(d_hidden, dtype=np.float32))
 
@@ -267,7 +273,6 @@ def build_lstm(len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, forget_g
     
     loss = T.sum(lasagne.objectives.binary_crossentropy(probs, labels))
     
-    # all_params = lstm_params + utt_lstm_params + dense_params
     all_params = lstm_params + utt_lstm_params + [M]
     loss += rho * sum(T.sum(l ** 2) for l in all_params)
 
@@ -310,6 +315,51 @@ def get_word_embeddings(vocab_idx, vocab_size, glove_we, glove_vocab, d_word):
             word_embeddings[idx] = uniform_sample(-0.25,0.25,d_word)
     return word_embeddings
 
+def get_trigram_vocab(vocab_idx):
+    trigram_vocab = defaultdict(int)
+    for w in vocab_idx.keys():
+        w = "#"+w+"#"
+        for i in range(len(w)-2):
+            trigram_vocab[w[i:i+3]] += 1
+    return trigram_vocab
+
+def get_trigram_vectors(vocab_idx, vocab_size, trigram_vocab_idx, TRIGRAM_UNK_idx):
+    trigram_vectors = np.zeros((vocab_size, len(trigram_vocab_idx)+1), dtype=np.int32)
+    for w, idx in vocab_idx.iteritems():
+        w = "#"+w+"#"
+        for j in range(len(w)-2):
+            trigram = w[j:j+3]
+            try:
+                trigram_idx = trigram_vocab_idx[trigram]
+            except KeyError:
+                trigram_idx = TRIGRAM_UNK_idx
+            trigram_vectors[idx][trigram_idx] += 1
+    for i, v in enumerate(trigram_vectors):
+        if not np.any(v):
+            trigram_vectors[i][TRIGRAM_UNK_idx] = 1 #for UNK and POS tag indices
+    return trigram_vectors
+
+def get_trigram_embeddings(vocab_idx, vocab_size):
+    trigram_vocab = get_trigram_vocab(vocab_idx)
+    print("Entire Trigram Vocab size %s" % len(trigram_vocab))
+    trigram_vocab = OrderedDict(sorted(trigram_vocab.items(), key=lambda t: t[1], reverse=True))
+    trigram_vocab = {w:ct for w,ct in trigram_vocab.iteritems() if ct > TRIGRAM_COUNT_CUTOFF}
+    trigram_vocab_size = len(trigram_vocab)
+    print("Used Trigram Vocab size %s" % trigram_vocab_size)
+    idx = 0
+    trigram_vocab_idx = {}
+    for w, ct in trigram_vocab.iteritems():
+        trigram_vocab_idx[w] = idx
+        idx += 1
+    TRIGRAM_UNK_idx = idx
+    trigram_vocab_size += 1 #for trigram UNK token
+    trigram_vectors = get_trigram_vectors(vocab_idx, vocab_size, trigram_vocab_idx, TRIGRAM_UNK_idx)
+    # pca = PCA(n_components='mle', svd_solver='full')
+    pca = PCA(n_components=50)
+    pca.fit(trigram_vectors)
+    trigram_embeddings = pca.transform(trigram_vectors)
+    return trigram_embeddings
+
 if __name__ == '__main__':
     np.set_printoptions(linewidth=160)
     if len(sys.argv) < 4:
@@ -317,11 +367,12 @@ if __name__ == '__main__':
         sys.exit(0)
     train = cPickle.load(open(sys.argv[1], 'rb'))
     dev = cPickle.load(open(sys.argv[2], 'rb'))
-    vocab_idx = cPickle.load(open(sys.argv[3], 'rb'))
-    vocab_size = cPickle.load(open(sys.argv[4], 'rb'))
-    batch_size = int(sys.argv[5])
-    glove_we = cPickle.load(open(sys.argv[6], 'rb'))
-    glove_vocab = cPickle.load(open(sys.argv[7], 'rb'))
+    test = cPickle.load(open(sys.argv[3], 'rb'))
+    vocab_idx = cPickle.load(open(sys.argv[4], 'rb'))
+    vocab_size = cPickle.load(open(sys.argv[5], 'rb'))
+    batch_size = int(sys.argv[6])
+    glove_we = cPickle.load(open(sys.argv[7], 'rb'))
+    glove_vocab = cPickle.load(open(sys.argv[8], 'rb'))
     d_word = 300
     d_hidden = 300
     freeze = False
@@ -333,6 +384,13 @@ if __name__ == '__main__':
 
     word_embeddings = get_word_embeddings(vocab_idx, vocab_size, glove_we, glove_vocab, d_word)
     word_embeddings = np.asarray(word_embeddings, dtype=np.float32)
+
+    trigram_embeddings = get_trigram_embeddings(vocab_idx, vocab_size)
+    trigram_embeddings = np.asarray(trigram_embeddings, dtype=np.float32)
+    
+    word_embeddings = np.concatenate((word_embeddings, trigram_embeddings), axis=1)
+    d_word += 50
+    d_hidden += 50
 
     EOU_IDX = vocab_idx['__eou__']        
     EOT_IDX = vocab_idx['__eot__']
@@ -353,4 +411,5 @@ if __name__ == '__main__':
     for epoch in range(n_epochs):
         validate_train(train_fn, 'Train', epoch, train, batch_size)
         validate(val_fn, '\t DEV', epoch, dev, batch_size)
+        validate(val_fn, '\t Test', epoch, test, batch_size)
         print "\n"

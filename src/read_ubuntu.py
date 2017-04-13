@@ -153,19 +153,21 @@ def get_data_idx(contexts, responses_list, contexts_pos, responses_pos_list, max
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print "usage: read_ubuntu.py <train.csv> <dev.csv> <glove_twitter_we> <out_train.p> <out_dev.p> <out.vocab> <out.vocab_size> <out.vocab_idx>"
+        print "usage: read_ubuntu.py <train.csv> <dev.csv> <test.csv> <glove_twitter_we> <out_train.p> <out_dev.p> <out.vocab> <out.vocab_size> <out.vocab_idx>"
         sys.exit(0)
     start_time = time.time()
     train_file = open(sys.argv[1])
     dev_file = open(sys.argv[2])
-    max_context_len = int(sys.argv[3])
-    max_response_len = int(sys.argv[4])
+    test_file = open(sys.argv[3])
+    max_context_len = int(sys.argv[4])
+    max_response_len = int(sys.argv[5])
     line = train_file.readline()
     all_sentences = []
     vocab_size = 0
     vocab = collections.defaultdict(int)
     t_contexts, t_responses_list, t_contexts_pos, t_responses_list_pos, labels, vocab = read_data(train_file, vocab, max_context_len, max_response_len, is_train=True)
     d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos = read_data(dev_file, vocab, max_context_len, max_response_len, is_train=False)
+    tt_contexts, tt_responses_list, tt_contexts_pos, tt_responses_list_pos = read_data(test_file, vocab, max_context_len, max_response_len, is_train=False)
     end_time = time.time()           
     print("--- %s seconds ---" % (end_time - start_time))
     start_time = end_time
@@ -203,6 +205,11 @@ if __name__ == "__main__":
                             get_data_idx(d_contexts, d_responses_list, d_contexts_pos, d_responses_list_pos, \
                                             max_context_len, max_response_len, vocab_idx, UNK_idx)
 
+    test_contexts_idx, test_context_masks_idx, \
+            test_responses_list_idx, test_response_masks_list_idx = \
+                            get_data_idx(tt_contexts, tt_responses_list, tt_contexts_pos, tt_responses_list_pos, \
+                                            max_context_len, max_response_len, vocab_idx, UNK_idx)
+
     end_time = time.time()           
     print("--- %s seconds ---" % (end_time - start_time))
     start_time = end_time
@@ -214,10 +221,13 @@ if __name__ == "__main__":
             train_responses_list_idx, train_response_masks_list_idx, labels]
     dev = [dev_contexts_idx, dev_context_masks_idx, \
              dev_responses_list_idx, dev_response_masks_list_idx]
-    cPickle.dump(train, open(sys.argv[5], 'wb'))
-    cPickle.dump(dev, open(sys.argv[6], 'wb'))
-    cPickle.dump(vocab, open(sys.argv[7], 'wb'))
-    cPickle.dump(vocab_size, open(sys.argv[8], 'wb'))
-    cPickle.dump(vocab_idx, open(sys.argv[9], 'wb'))
+    test = [test_contexts_idx, test_context_masks_idx, \
+             test_responses_list_idx, test_response_masks_list_idx]
+    cPickle.dump(train, open(sys.argv[6], 'wb'))
+    cPickle.dump(dev, open(sys.argv[7], 'wb'))
+    cPickle.dump(test, open(sys.argv[8], 'wb'))
+    cPickle.dump(vocab, open(sys.argv[9], 'wb'))
+    cPickle.dump(vocab_size, open(sys.argv[10], 'wb'))
+    cPickle.dump(vocab_idx, open(sys.argv[11], 'wb'))
     end_time = time.time() 
     print("--- %s seconds ---" % (end_time - start_time))

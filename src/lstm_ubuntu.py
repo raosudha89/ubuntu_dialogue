@@ -2,12 +2,14 @@ import sys
 import theano, lasagne, cPickle, time                                                   
 import numpy as np
 import theano.tensor as T     
-from collections import OrderedDict, Counter
+from collections import OrderedDict, Counter, defaultdict
 import math, random
 import pdb
+from sklearn.decomposition import PCA
 
-N = 2
+N = 10
 DEPTH = 1
+TRIGRAM_COUNT_CUTOFF = 30
 
 def iterate_minibatches(contexts, context_masks, responses, response_masks, batch_size, shuffle=False):
     if shuffle:
@@ -68,11 +70,20 @@ def validate_train(val_fn, fold_name, epoch, fold, batch_size):
                 (fold_name, epoch, cost / num_batches, acc / num_batches, time.time()-start)
     print lstring
 
+def get_rank(preds, labels):
+    preds = np.array(preds)
+    correct = np.where(labels==1)[0][0]
+    sort_index_preds = np.argsort(preds)
+    desc_sort_index_preds = sort_index_preds[::-1] #since ascending sort and we want descending
+    rank = np.where(desc_sort_index_preds==correct)[0][0]
+    return rank+1
+
 def validate(val_fn, fold_name, epoch, fold, batch_size):
     start = time.time()
     num_batches = 0.
     cost = 0.
     acc = 0.
+    recall = [0]*N
     contexts, context_masks, responses_list, response_masks_list = fold
     responses_list = responses_list[:,:N,:]
     response_masks_list = response_masks_list[:,:N,:]
@@ -90,29 +101,21 @@ def validate(val_fn, fold_name, epoch, fold, batch_size):
             cost += loss*1.0/len(probs)
         corr = 0
         for i in range(batch_size):
-            if np.argmax(probs[i]) == np.argmax(l[i]):
+            rank = get_rank(probs[i], l[i])
+            if rank == 1:
                 corr += 1
+            # if np.argmax(probs[i]) == np.argmax(l[i]):
+            #     corr += 1
+            for index in range(N):
+                if rank <= index+1:
+                    recall[index] += 1
         acc += corr*1.0/batch_size
         num_batches += 1
+    recall = [round(curr_r*1.0/(batch_size*num_batches), 3) for curr_r in recall]
     lstring = '%s: epoch:%d, cost:%f, acc:%f, time:%d' % \
                 (fold_name, epoch, cost / num_batches, acc / num_batches, time.time()-start)
     print lstring
-
-class SoftmaxLayer(lasagne.layers.Layer):
-    def __init__(self, incoming, d_hid, num_units, **kwargs):
-        super(SoftmaxLayer, self).__init__(incoming, **kwargs)
-        self.num_units = num_units
-        self.W = self.add_param(lasagne.init.GlorotUniform(), \
-                (d_hid, num_units), name="W")
-        self.b = self.add_param(lasagne.init.Constant(0.),
-                (num_units,), name="b", regularizbale=False)
-
-    def get_output_shape_for(self, input_shape):
-        return (input_shape[0], input_shape[1])
-
-    def get_output_for(self, input, **kwargs):
-        activation = T.dot(input, self.W) + self.b
-        return T.nnet.sigmoid(activation)
+    print recall
 
 def build_lstm(word_embeddings, len_voc, d_word, d_hidden, max_len, batch_size, lr, rho, forget_gate_bias, freeze=False):
 
@@ -139,8 +142,6 @@ def build_lstm(word_embeddings, len_voc, d_word, d_hidden, max_len, batch_size, 
 
     l_response = lasagne.layers.InputLayer(shape=(batch_size, max_len), input_var=responses)
     l_response_mask = lasagne.layers.InputLayer(shape=(batch_size, max_len), input_var=response_masks)
-    # l_response_emb = lasagne.layers.EmbeddingLayer(l_response, len_voc, d_word, W=word_embeddings)
-    # l_response_emb = lasagne.layers.EmbeddingLayer(l_response, len_voc, d_word, W=lasagne.init.GlorotNormal())
     l_response_emb = lasagne.layers.EmbeddingLayer(l_response, len_voc, d_word, W=l_context_emb.W)
     
     l_response_lstm = lasagne.layers.LSTMLayer(l_response_emb, d_hidden, \
@@ -167,9 +168,9 @@ def build_lstm(word_embeddings, len_voc, d_word, d_hidden, max_len, batch_size, 
                                                                 nonlinearity=l_context_lstm.nonlinearity_cell),\
                                             )    
 
-    # attention over embeddings
-    # l_context_lstm = SoftmaxLayer(l_context_lstm, d_hidden, d_hidden)    
-    # l_response_lstm = SoftmaxLayer(l_response_lstm, d_hidden, d_hidden)
+    # add dropout
+    l_context_lstm = lasagne.layers.DropoutLayer(l_context_lstm, p=0.4)
+    l_response_lstm = lasagne.layers.DropoutLayer(l_response_lstm, p=0.4)
 
     # now get aggregate embeddings
     context_out = lasagne.layers.get_output(l_context_lstm)
@@ -182,30 +183,12 @@ def build_lstm(word_embeddings, len_voc, d_word, d_hidden, max_len, batch_size, 
     M = theano.shared(np.eye(d_hidden, dtype=np.float32))
 
     probs = T.sum(T.dot(context_out, M)*responses_out, axis=1)
-    probs = lasagne.nonlinearities.sigmoid(probs)
-
-    # context_response = T.concatenate([context_out, responses_out], axis=1)
-    # l_context_response_in = lasagne.layers.InputLayer(shape=(batch_size, 2*d_hidden), input_var=context_response)
-    
-    # for k in range(DEPTH):
-    #     if k == 0:
-    #         l_context_response_dense = lasagne.layers.DenseLayer(l_context_response_in, num_units=d_hidden, \
-    #                                                          nonlinearity=lasagne.nonlinearities.rectify)
-    #     else:
-    #         l_context_response_dense = lasagne.layers.DenseLayer(l_context_response_dense, num_units=d_hidden, \
-    #                                                          nonlinearity=lasagne.nonlinearities.rectify)
-    # 
-    # l_context_response_dense = lasagne.layers.DenseLayer(l_context_response_dense, num_units=1, \
-    #                                                          nonlinearity=lasagne.nonlinearities.sigmoid)
-    # 
-    # probs = lasagne.layers.get_output(l_context_response_dense)        
+    probs = lasagne.nonlinearities.sigmoid(probs)       
     
     loss = T.sum(lasagne.objectives.binary_crossentropy(probs, labels))
 
     all_context_params = lasagne.layers.get_all_params(l_context_lstm, trainable=True)
-    all_response_params = lasagne.layers.get_all_params(l_response_lstm, trainable=True)
-    # dense_params = lasagne.layers.get_all_params(l_context_response_dense, trainable=True)
-    # all_params =  all_context_params + all_response_params + dense_params
+
     all_params =  all_context_params + [M]
     
     loss += rho * sum(T.sum(l ** 2) for l in all_params)
@@ -225,6 +208,51 @@ def uniform_sample(a, b, k=0):
         ret[x] = random.uniform(a, b)
     return ret
 
+def get_trigram_vocab(vocab_idx):
+    trigram_vocab = defaultdict(int)
+    for w in vocab_idx.keys():
+        w = "#"+w+"#"
+        for i in range(len(w)-2):
+            trigram_vocab[w[i:i+3]] += 1
+    return trigram_vocab
+
+def get_trigram_vectors(vocab_idx, vocab_size, trigram_vocab_idx, TRIGRAM_UNK_idx):
+    trigram_vectors = np.zeros((vocab_size, len(trigram_vocab_idx)+1), dtype=np.int32)
+    for w, idx in vocab_idx.iteritems():
+        w = "#"+w+"#"
+        for j in range(len(w)-2):
+            trigram = w[j:j+3]
+            try:
+                trigram_idx = trigram_vocab_idx[trigram]
+            except KeyError:
+                trigram_idx = TRIGRAM_UNK_idx
+            trigram_vectors[idx][trigram_idx] += 1
+    for i, v in enumerate(trigram_vectors):
+        if not np.any(v):
+            trigram_vectors[i][TRIGRAM_UNK_idx] = 1 #for UNK and POS tag indices
+    return trigram_vectors
+
+def get_trigram_embeddings(vocab_idx, vocab_size):
+    trigram_vocab = get_trigram_vocab(vocab_idx)
+    print("Entire Trigram Vocab size %s" % len(trigram_vocab))
+    trigram_vocab = OrderedDict(sorted(trigram_vocab.items(), key=lambda t: t[1], reverse=True))
+    trigram_vocab = {w:ct for w,ct in trigram_vocab.iteritems() if ct > TRIGRAM_COUNT_CUTOFF}
+    trigram_vocab_size = len(trigram_vocab)
+    print("Used Trigram Vocab size %s" % trigram_vocab_size)
+    idx = 0
+    trigram_vocab_idx = {}
+    for w, ct in trigram_vocab.iteritems():
+        trigram_vocab_idx[w] = idx
+        idx += 1
+    TRIGRAM_UNK_idx = idx
+    trigram_vocab_size += 1 #for trigram UNK token
+    trigram_vectors = get_trigram_vectors(vocab_idx, vocab_size, trigram_vocab_idx, TRIGRAM_UNK_idx)
+    # pca = PCA(n_components='mle', svd_solver='full')
+    pca = PCA(n_components=50)
+    pca.fit(trigram_vectors)
+    trigram_embeddings = pca.transform(trigram_vectors)
+    return trigram_embeddings
+
 def get_word_embeddings(vocab_idx, vocab_size, glove_we, glove_vocab, d_word):
     word_embeddings = [None]*vocab_size
     for w, idx in vocab_idx.iteritems():
@@ -242,27 +270,41 @@ if __name__ == '__main__':
     if len(sys.argv) < 4:
         print "usage: python lstm_ubuntu.py train.p dev.p vocab_idx.p vocab_size.p batch_size glove_we glove_vocab"
         sys.exit(0)
-    train = cPickle.load(open(sys.argv[1], 'rb'))
-    dev = cPickle.load(open(sys.argv[2], 'rb'))
-    vocab_idx = cPickle.load(open(sys.argv[3], 'rb'))
-    vocab_size = cPickle.load(open(sys.argv[4], 'rb'))
-    batch_size = int(sys.argv[5])
-    glove_we = cPickle.load(open(sys.argv[6], 'rb'))
-    glove_vocab = cPickle.load(open(sys.argv[7], 'rb'))
+    start_time = time.time()
+    print 'loading data...'
+    vocab_idx = cPickle.load(open(sys.argv[4], 'rb'))
+    vocab_size = cPickle.load(open(sys.argv[5], 'rb'))
+    batch_size = int(sys.argv[6])
+    glove_we = cPickle.load(open(sys.argv[7], 'rb'))
+    glove_vocab = cPickle.load(open(sys.argv[8], 'rb'))
     d_word = 300
     d_hidden = 300
     freeze = False
     lr = 0.001
-    n_epochs = 10
+    n_epochs = 5
     rho = 1e-5
     forget_gate_bias = 2.0
-    max_len = len(train[0][1])
-    
+
     word_embeddings = get_word_embeddings(vocab_idx, vocab_size, glove_we, glove_vocab, d_word)
     word_embeddings = np.asarray(word_embeddings, dtype=np.float32)
-    #word_embeddings = None
     
-    print 'vocab_size', vocab_size, 'max_len', max_len
+    trigram_embeddings = get_trigram_embeddings(vocab_idx, vocab_size)
+    trigram_embeddings = np.asarray(trigram_embeddings, dtype=np.float32)
+    
+    print word_embeddings.shape
+    print trigram_embeddings.shape
+    word_embeddings = np.concatenate((word_embeddings, trigram_embeddings), axis=1)
+    d_word += 50
+    d_hidden += 50
+    
+    #word_embeddings = None
+    print 'vocab_size', vocab_size
+    train = cPickle.load(open(sys.argv[1], 'rb'))
+    dev = cPickle.load(open(sys.argv[2], 'rb'))
+    test = cPickle.load(open(sys.argv[3], 'rb'))
+    max_len = len(train[0][1])
+    print 'done loading'
+    print 'time taken ', time.time() - start_time
 
     start_time = time.time()
     print 'compiling graph...'
@@ -272,7 +314,7 @@ if __name__ == '__main__':
 
     # train network
     for epoch in range(n_epochs):
-
         validate_train(train_fn, 'Train', epoch, train, batch_size)
         validate(val_fn, '\t Dev', epoch, dev, batch_size)
+        validate(val_fn, '\t Test', epoch, test, batch_size)
         print "\n"
